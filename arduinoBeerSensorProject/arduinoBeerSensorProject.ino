@@ -12,6 +12,9 @@
 /*--------------DEFINES--------------*/
 #define LED_STOP_PIN 4
 #define INPUT_STOP_PIN 5
+#define INPUT_SELECT 9
+#define INPUT_CHANGE 8
+
 //Monitor
 //Memory
 #define LED_FS_W_PIN 3
@@ -21,17 +24,17 @@
 #define DHTTYPE DHT22   // DHT 22  (AM2302)
 
 /*--------------VARIABLES--------------*/
-bool stopRequired = false;
 //Monitor
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-String riga1 = "gg/mm/aaaa hh:mm";
-String riga2 = "T:--C H:--%";
+String raw1 = "gg/mm/aaaa hh:mm";
+String raw2 = "T:--C H:--%";
 
 //Memory
 byte inByte;
 bool sdInitSuccess = false; //card init status
 File myFile;
 int lineCounter = 0;
+bool stopRequired = false;
 
 //Sensor
 DHT dht(DHTPIN, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
@@ -43,39 +46,79 @@ float temp; //Stores temperature value
 Rtc_Pcf8563 rtc;
 String rtcTime;
 String rtcDate;
+typedef struct dateVar{
+  int day;
+  int month;
+  int year;
+  int hours;
+  int minutes;
+}sDateVar;
+sDateVar date;
+int minuteWriting = -1;
 
+/*--------------SETUP--------------*/
 void setup() {
+  //Debug
   Serial.begin(9600);
   while (!Serial) {
     ; //wait for the serial port to connect.
   }
 
+  //Monitor
   lcd.init();
   lcd.backlight();
 
+  //Memory
   pinMode(SS_PIN, OUTPUT);
   pinMode(LED_FS_W_PIN, OUTPUT);
   digitalWrite(LED_FS_W_PIN, LOW);
+  delay(1000);
+  sdInitSuccess = initSD();
 
+  //Input/Output
   pinMode(LED_STOP_PIN, OUTPUT);
   digitalWrite(LED_STOP_PIN, LOW);
-
   pinMode(INPUT_STOP_PIN, INPUT);
 
+  //Sensor
   dht.begin();
 
-  /*rtc.initClock();
-  //set a time to start with.
-  //day, weekday, month, century(1=1900, 0=2000), year(0-99)
-  rtc.setDate(10, 1, 1, 0, 20); 
-  //hr, min, sec
-  rtc.setTime(21, 41, 0);*/
+  //RTC
+  if(sdInitSuccess){
+    if(SD.exists("DATE.txt")){
+      Serial.println("Date setting");
+      File dateFile;
+      char buf[15];
+      String sBuf;
+      dateFile = SD.open("DATE.txt", FILE_READ);
+      if(dateFile){
+        date.day = dateFile.parseInt();
+        date.month = dateFile.parseInt();
+        date.year = dateFile.parseInt();
+        date.hours = dateFile.parseInt();
+        date.minutes = dateFile.parseInt();
+        dateFile.close();
+        rtc.initClock();
+        rtc.setDate(date.day, 1, date.month, 0, date.year); 
+        rtc.setTime(date.hours, date.minutes, 0);
+      }
+      Serial.println("Date file removing");
+      SD.remove("DATE.txt");
+    }
+  }
 }
 
+/*--------------LOOP--------------*/
 void loop() {
   stopRequired = digitalRead(INPUT_STOP_PIN);
   if(stopRequired){
+    Serial.println("STOP REQUIRED");
     digitalWrite(LED_STOP_PIN, HIGH);
+    while(stopRequired){
+      stopRequired = digitalRead(INPUT_STOP_PIN);
+      delay(5000);
+    }
+    Serial.println("START REQUIRED");
   }else{
     digitalWrite(LED_STOP_PIN, LOW);
   }
@@ -83,47 +126,62 @@ void loop() {
   //Getting sensor value
   hum = dht.readHumidity();
   temp= dht.readTemperature();
+
+  //Getting Time & Date
+  rtcTime = rtc.formatTime(RTCC_TIME_HM);
+  rtcDate = rtc.formatDate(RTCC_DATE_WORLD);
+  
+  //Monitor write
+  lcd.clear();
+  lcd.setCursor(0,0);
+  raw1 = rtcDate + " " + rtcTime;
+  typewriting(raw1);
+  lcd.setCursor(0,1);
+  raw2 = "T:" + getStringFromFloat(temp) + "C H:" + getStringFromFloat(hum) + "%";
+  typewriting(raw2);
+
+  //Debug write
   Serial.print("Humidity: ");
   Serial.print(hum);
   Serial.print(" %, Temp: ");
   Serial.print(temp);
   Serial.println(" Celsius");
-
-  //Getting Time & Date
-  rtcTime = rtc.formatTime();
-  rtcDate = rtc.formatDate();
-
-  riga1 = rtcDate + " " + rtcTime;
-  //Monitor write
-  lcd.clear();
-  lcd.setCursor(0,0);
-  typewriting(riga1);
-  lcd.setCursor(0,1);
-  riga2 = "T:" + getStringFromFloat(temp) + "C H:" + getStringFromFloat(hum) + "%";
-  typewriting(riga2);
-
-  Serial.print(rtc.formatTime());
+  Serial.print(rtcTime);
   Serial.print("\r\n");
-  Serial.print(rtc.formatDate());
+  Serial.print(rtcDate);
   Serial.print("\r\n");
 
-  if(!stopRequired){
+  date.minutes=rtc.getMinute();
+  if(minuteWriting == -1 || date.minutes == minuteWriting){
     saveDataOnFile();
+    minuteWriting = (date.minutes + 10) % 60;
   }
-  
-  delay(5000);
+  delay(30000);
 }
 
+/*--------------FUNCTIONS--------------*/
+
+bool initSD(void){
+  Serial.println("Initializing SD Card..");
+  if (!SD.begin(10)) { //using pin 10 (SS)
+    Serial.println("Initialization failed!");
+    Serial.println();
+    return false;
+  }
+  else {
+    Serial.println("Intitialization success.");
+    Serial.println();
+    return true;
+  }
+}
 void saveDataOnFile(void){
   digitalWrite(LED_FS_W_PIN, HIGH);
   if (sdInitSuccess) {
-    Serial.println("Already initialized.");
-    Serial.println();
     myFile = SD.open("TEST.txt", FILE_WRITE);
     if (myFile) {
       Serial.println("File opened successfully.");
       Serial.println("Writing to TEST.text");
-      myFile.print("Line "); myFile.println(lineCounter);
+      myFile.print(raw1 + ";" + temp + ";" + hum); myFile.println();
       myFile.close(); //this writes to the card
       Serial.println("Done");
       Serial.println();
@@ -133,18 +191,7 @@ void saveDataOnFile(void){
     }
   }
   else if (!sdInitSuccess) { //if not already initialized
-    Serial.println("Initializing SD Card..");
-    if (!SD.begin(10)) { //using pin 10 (SS)
-      Serial.println("Initialization failed!");
-      Serial.println();
-      sdInitSuccess = false;
-      return;
-    }
-    else {
-      Serial.println("Intitialization success.");
-      Serial.println();
-      sdInitSuccess = true;
-    }
+      sdInitSuccess = initSD();
   }
   digitalWrite(LED_FS_W_PIN, LOW);
 }
