@@ -12,6 +12,9 @@
 /*--------------DEFINES--------------*/
 #define LED_STOP_PIN 4
 #define INPUT_STOP_PIN 5
+#define INPUT_SELECT 9
+#define INPUT_CHANGE 8
+
 //Monitor
 //Memory
 #define LED_FS_W_PIN 3
@@ -22,6 +25,24 @@
 
 /*--------------VARIABLES--------------*/
 bool stopRequired = false;
+bool selectRequired = false;
+bool changeRequired = false;
+typedef enum variableOnChange{
+  DAY,
+  MONTH,
+  YEAR,
+  HOURS,
+  MINUTES
+}eVariableOnChange;
+eVariableOnChange variableOnChange = DAY;
+typedef struct dateVar{
+  int day;
+  int month;
+  int year;
+  int hours;
+  int minutes;
+}sDateVar;
+sDateVar date;
 //Monitor
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 String riga1 = "gg/mm/aaaa hh:mm";
@@ -75,7 +96,32 @@ void setup() {
 void loop() {
   stopRequired = digitalRead(INPUT_STOP_PIN);
   if(stopRequired){
+    Serial.println("STOP REQUIRED");
     digitalWrite(LED_STOP_PIN, HIGH);
+    while(1){
+      selectRequired = digitalRead(INPUT_SELECT);
+      changeRequired = digitalRead(INPUT_CHANGE);
+      Serial.println("selectRequired = " + String(selectRequired));
+      Serial.println("changeRequired = " + String(changeRequired));
+      if(selectRequired && changeRequired){
+        Serial.println("DATE SETUP REQUIRED");
+        digitalWrite(LED_FS_W_PIN, HIGH);
+        delay(200);
+        while(1){
+          lcdPrintVariable(variableOnChange, date.day);
+          switch(variableOnChange){
+            case DAY:
+              if(changeRequired){
+                date.day++;
+              }
+              if(changeRequired){
+                variableOnChange = MONTH;
+              }
+          }
+          delay(500);
+        }
+      }
+    }
   }else{
     digitalWrite(LED_STOP_PIN, LOW);
   }
@@ -158,5 +204,23 @@ void typewriting(String messaggio) {
 
 String getStringFromFloat(float var){
   return String(var).substring(0, String(var).length() - 1);
+}
+
+String getVaribaleOnChangeString(eVariableOnChange variable){
+  switch(variable){
+    case DAY: return "DAY";break;
+    case MONTH: return "DAY";break;
+    case YEAR: return "DAY";break;
+    case HOURS: return "DAY";break;
+    case MINUTES: return "DAY";break;
+    default: return "ERROR"; break;
+  }
+}
+
+void lcdPrintVariable(eVariableOnChange variable, int num){
+  String sVariable = getVaribaleOnChangeString(variable);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  typewriting(sVariable + " " + String(num));
 }
 
