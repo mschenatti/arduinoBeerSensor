@@ -1,3 +1,5 @@
+#include <RTClib.h>
+
 /*--------------INLCUDES--------------*/
 //Monitor
 #include <LiquidCrystal_I2C.h>
@@ -5,7 +7,7 @@
 #include <SPI.h>
 #include <SD.h> //include the SD library
 //Sensor
-#include <DHT.h>;
+#include <DHT.h>
 //RTC
 #include <Rtc_Pcf8563.h>
 
@@ -56,6 +58,9 @@ typedef struct dateVar{
 sDateVar date;
 int minuteWriting = -1;
 
+
+//TERMISTOR
+bool termistorStatus = false;
 /*--------------SETUP--------------*/
 void setup() {
   //Debug
@@ -77,7 +82,6 @@ void setup() {
 
   //Input/Output
   pinMode(LED_STOP_PIN, OUTPUT);
-  digitalWrite(LED_STOP_PIN, LOW);
   pinMode(INPUT_STOP_PIN, INPUT);
 
   //Sensor
@@ -106,27 +110,45 @@ void setup() {
       SD.remove("DATE.txt");
     }
   }
+
+  //TERMISTOR
+  digitalWrite(LED_STOP_PIN, LOW);
+  Serial.println("Termoresistor OFF");
+  termistorStatus = false;
 }
 
 /*--------------LOOP--------------*/
 void loop() {
-  stopRequired = digitalRead(INPUT_STOP_PIN);
-  if(stopRequired){
-    Serial.println("STOP REQUIRED");
-    digitalWrite(LED_STOP_PIN, HIGH);
-    while(stopRequired){
-      stopRequired = digitalRead(INPUT_STOP_PIN);
-      delay(5000);
-    }
-    Serial.println("START REQUIRED");
-  }else{
-    digitalWrite(LED_STOP_PIN, LOW);
-  }
+//  stopRequired = digitalRead(INPUT_STOP_PIN);
+//  if(stopRequired){
+//    Serial.println("STOP REQUIRED");
+//    while(stopRequired){
+//      stopRequired = digitalRead(INPUT_STOP_PIN);
+//      delay(5000);
+//    }
+//    Serial.println("START REQUIRED");
+//  }else{
+//  }
   
   //Getting sensor value
   hum = dht.readHumidity();
   temp= dht.readTemperature();
 
+  if(temp < 18 && termistorStatus == false){
+    digitalWrite(LED_STOP_PIN, HIGH);
+    Serial.println("Termoresistor ON");
+    termistorStatus = true;
+  }
+  else if(temp > 19 && termistorStatus == true)
+  {
+    digitalWrite(LED_STOP_PIN, LOW);
+    Serial.println("Termoresistor OFF");
+    termistorStatus = false;
+  }
+  else
+  {
+    //Do nothing
+  }
   //Getting Time & Date
   rtcTime = rtc.formatTime(RTCC_TIME_HM);
   rtcDate = rtc.formatDate(RTCC_DATE_WORLD);
@@ -156,7 +178,7 @@ void loop() {
     saveDataOnFile();
     minuteWriting = (date.minutes + 10) % 60;
   }
-  delay(30000);
+  delay(5000);
 }
 
 /*--------------FUNCTIONS--------------*/
@@ -181,7 +203,7 @@ void saveDataOnFile(void){
     if (myFile) {
       Serial.println("File opened successfully.");
       Serial.println("Writing to TEST.text");
-      myFile.print(raw1 + ";" + temp + ";" + hum); myFile.println();
+      myFile.print(raw1 + ";" + temp + ";" + hum + ";" + termistorStatus); myFile.println();
       myFile.close(); //this writes to the card
       Serial.println("Done");
       Serial.println();
@@ -206,4 +228,3 @@ void typewriting(String messaggio) {
 String getStringFromFloat(float var){
   return String(var).substring(0, String(var).length() - 1);
 }
-
