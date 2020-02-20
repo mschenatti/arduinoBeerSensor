@@ -13,10 +13,6 @@
 //Relè
 #define RELE1PIN 2
 #define RELE2PIN 3
-#define DEFAULT_RELE1_LOW_TEMP  19
-#define DEFAULT_RELE1_HIGH_TEMP 21
-#define DEFAULT_RELE2_LOW_TEMP  19
-#define DEFAULT_RELE2_HIGH_TEMP 21
 
 //Memory
 #define SS_PIN 10
@@ -33,6 +29,7 @@ bool Rele2On = false;
 
 //Monitor
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+bool monitorDate = true;
 
 //Memory
 byte inByte;
@@ -48,6 +45,10 @@ DHT dht1(DHT1PIN, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
 DHT dht2(DHT2PIN, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
 float hum;  //Stores humidity value
 float temp; //Stores temperature value
+float DEFAULT_RELE1_LOW_TEMP  = 19.00;
+float DEFAULT_RELE1_HIGH_TEMP = 21.00;
+float DEFAULT_RELE2_LOW_TEMP  = 19.00;
+float DEFAULT_RELE2_HIGH_TEMP = 21.00;
 
 //RTC
 Rtc_Pcf8563 rtc;
@@ -62,44 +63,6 @@ void setup() {
     ; //wait for the serial port to connect.
   }
 
-  /*Serial.println("Bootloading-Press 'c' to set RTC");
-  int count = 5;
-  while(count>0){
-    Serial.println(count);
-    count--;
-    
-    if (Serial.available() > 0) {
-      int incomingByte = 0;
-      // read the incoming byte:
-      incomingByte = Serial.read();
-    
-      // say what you got:
-      Serial.print("I received: ");
-      Serial.println(incomingByte);
-  
-      if(incomingByte == 'c'){
-        Serial.println("***CLOCK SETUP***");
-        byte day = 0;
-        byte month = 0;
-        byte year = 0;
-        byte hour = 0;
-        byte minute = 0;
-        while(Serial.available()){Serial.read();}
-        Serial.print("Day (1:31) ");    while(!Serial.available()){day = Serial.read();}//day = Serial.read();
-        Serial.print("Month (1:12) ");  while(!Serial.available()){month = Serial.read();}
-        Serial.print("Year (0:99) ");   while(!Serial.available()){year = Serial.read();}
-        Serial.print("Hour (0:23) ");   while(!Serial.available()){hour = Serial.read();}
-        Serial.print("Minute (0:59) "); while(!Serial.available()){minute = Serial.read();}
-        rtc.initClock();
-        rtc.setDate(day,1,month,0, year); 
-        rtc.setTime(hour, minute, 0);
-        //rtc.initClock();
-      }
-  }
-  
-    delay(1000);
-  }*/
-
   //RTC
   //rtc.initClock();
   //rtc.setDate(16,1,2,0,20); 
@@ -108,6 +71,7 @@ void setup() {
   //Monitor
   lcd.init();
   lcd.backlight();
+  lcd.clear();
   
   //Memory
   pinMode(SS_PIN, OUTPUT);
@@ -132,41 +96,61 @@ void setup() {
 
 /*--------------LOOP--------------*/
 void loop() {
-  String raw1 = "gg/mm/aaaa hh:mm";
-  String raw2 = "T:--C H:--%";
-
   int minutesNow = 0;
-  
+
   //Getting Time & Date
   rtcTime = rtc.formatTime(RTCC_TIME_HM);
   rtcDate = rtc.formatDate(RTCC_DATE_WORLD);
+
+  if(monitorDate){
+    lcd.clear();
+    typewriting(rtcDate + " " + rtcTime);
+    delay(2000);
+    lcd.clear();
+    lcd.setCursor(7,0);
+    typewriting("--");
+    lcd.setCursor(7,1);
+    typewriting("--");
+    monitorDate = false;
+  }
   
-  //Getting sensor value
+  Serial.println("-------");
+  printDebugTime();
+  
+  //Getting sensor 1 value
   hum = dht1.readHumidity();
   temp= dht1.readTemperature();
   //Debug write
-  Serial.println("DHT22 1");
+  Serial.print("DHT22 1: ");
   printDebugTempHum();
-  manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP);
+  //Manage Rele
+  if (manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP)){
+    saveDataOnFile();
+  }
 
-  /*
-  //Getting sensor value
+  //Monitor write
+  lcd.setCursor(0,0);
+  typewriting("T1:" + getStringFromFloat(temp));
+  lcd.setCursor(0,1);
+  typewriting("H1:" + getStringFromFloat(hum));
+ 
+  
+  //Getting sensor 2 value
   hum = dht2.readHumidity();
   temp= dht2.readTemperature();
   //Debug write
-  Serial.println("DHT22 2");
+  Serial.print("DHT22 2: ");
   printDebugTempHum();
-  manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP);
-  */
-    
+  //Manage Rele
+  if(manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP)){
+    saveDataOnFile();
+  }
+  
   //Monitor write
-  lcd.clear();
-  lcd.setCursor(0,0);
-  raw1 = rtcDate + " " + rtcTime;
-  typewriting(raw1);
-  lcd.setCursor(0,1);
-  raw2 = "T:" + getStringFromFloat(temp) + "C H:" + getStringFromFloat(hum) + "%";
-  typewriting(raw2);
+  lcd.setCursor(9,0);
+  typewriting("T2:" + getStringFromFloat(temp));
+  lcd.setCursor(9,1);
+  typewriting("H2:" + getStringFromFloat(hum));
 
   minutesNow = rtc.getMinute();
   if(minuteWriting == -1 || minutesNow == minuteWriting){
@@ -193,12 +177,14 @@ bool initSD(void){
 }
 
 void saveDataOnFile(void){
+  
   if (sdInitSuccess) {
     myFile = SD.open("TEST.txt", FILE_WRITE);
     if (myFile) {
       Serial.println("File opened successfully.");
       Serial.println("Writing to TEST.text");
-      //myFile.print(raw1 + ";" + temp + ";" + hum + ";" + Rele1On); myFile.println();
+      myFile.println(rtcTime + "-" + rtcDate + "; DHT1;" + String(dht1.readTemperature()) + ";" + String(dht1.readHumidity()) + ";" + Rele1On);
+      myFile.println(rtcTime + "-" + rtcDate + "; DHT2;" + String(dht2.readTemperature()) + ";" + String(dht2.readHumidity()) + ";" + Rele1On);
       myFile.close(); //this writes to the card
       Serial.println("Done");
       Serial.println();
@@ -224,19 +210,29 @@ String getStringFromFloat(float var){
 }
 
 void printDebugTempHum(void) {
-  Serial.print(rtcDate);
-  Serial.print(" ");
-  Serial.print(rtcTime);
-  Serial.print("\r\n");
   Serial.print("Humidity: ");
   Serial.print(hum);
   Serial.print(" %, Temp: ");
   Serial.print(temp);
   Serial.println(" Celsius");
-  Serial.println("---");
 }
 
-void manageRele(int rele, int temp, int lowTemp, int highTemp){
+void printDebugTime(void){
+  Serial.print(rtcDate);
+  Serial.print(" ");
+  Serial.print(rtcTime);
+  Serial.print("\r\n");
+}
+
+bool manageRele(int rele, float temp, float lowTemp, float highTemp){
+  int retVal = true;
+  
+  if(isnan(temp)){
+    Serial.println("TEMP reading error sensor " + String(rele));
+    retVal = false;
+    return retVal;
+  }
+  
   switch(rele){
     case 1:
         if(temp < lowTemp && Rele1On == false){
@@ -252,29 +248,31 @@ void manageRele(int rele, int temp, int lowTemp, int highTemp){
         }
         else
         {
-          //Do nothing
+          retVal = false;
         }
       break;
-    case2:
+    case 2:
         if(temp < lowTemp && Rele2On == false){
           digitalWrite(RELE2PIN, LOW);
           Serial.println("Relè 2 ON");
-          Rele1On = true;
+          Rele2On = true;
         }
         else if(temp > highTemp && Rele2On == true)
         {
           digitalWrite(RELE2PIN, HIGH);
           Serial.println("Relè 2 OFF");
-          Rele1On = false;
+          Rele2On = false;
         }
         else
         {
-          //Do nothing
+          retVal = false;
         }
       break;
     default:
       Serial.println("ERROR - Rele not available");
+      retVal = false;
       break;
   }
-  
+
+  return retVal;
 }
