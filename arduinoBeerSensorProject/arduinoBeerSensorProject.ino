@@ -39,6 +39,8 @@ int lineCounter = 0;
 bool stopRequired = false;
 int memoryWritingPeriod = 10;
 int minuteWriting = -1;
+int minutesNow = 0;
+bool writingRequired = false;
 
 //Sensor
 DHT dht1(DHT1PIN, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
@@ -83,8 +85,8 @@ void setup() {
   pinMode(RELE2PIN, OUTPUT);
   digitalWrite(RELE1PIN, HIGH);
   digitalWrite(RELE2PIN, HIGH);
-  Serial.println("Relè 1 OFF");
-  Serial.println("Relè 2 OFF");
+  Serial.println("Rele 1 OFF");
+  Serial.println("Rele 2 OFF");
   Rele1On = false;
   Rele2On = false;
 
@@ -96,7 +98,6 @@ void setup() {
 
 /*--------------LOOP--------------*/
 void loop() {
-  int minutesNow = 0;
 
   //Getting Time & Date
   rtcTime = rtc.formatTime(RTCC_TIME_HM);
@@ -124,8 +125,8 @@ void loop() {
   Serial.print("DHT22 1: ");
   printDebugTempHum();
   //Manage Rele
-  if (manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP)){
-    saveDataOnFile();
+  if (manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP) || writingRequired ){
+    saveDataOnFile(1, hum, temp);
   }
 
   //Monitor write
@@ -142,9 +143,11 @@ void loop() {
   Serial.print("DHT22 2: ");
   printDebugTempHum();
   //Manage Rele
-  if(manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP)){
-    saveDataOnFile();
+  if(manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP) || writingRequired){
+    saveDataOnFile(2, hum, temp);
   }
+
+  writingRequired = false;
   
   //Monitor write
   lcd.setCursor(9,0);
@@ -154,7 +157,7 @@ void loop() {
 
   minutesNow = rtc.getMinute();
   if(minuteWriting == -1 || minutesNow == minuteWriting){
-    saveDataOnFile();
+    writingRequired = true;
     minuteWriting = (minutesNow + memoryWritingPeriod) % 60;
   }
   delay(5000);
@@ -176,21 +179,39 @@ bool initSD(void){
   }
 }
 
-void saveDataOnFile(void){
+void saveDataOnFile(int rele, float sTemperature, float sHumidity){
+  String temp;
   
   if (sdInitSuccess) {
     myFile = SD.open("TEST.txt", FILE_WRITE);
     if (myFile) {
       Serial.println("File opened successfully.");
-      Serial.println("Writing to TEST.text");
-      myFile.println(rtcTime + "-" + rtcDate + "; DHT1;" + String(dht1.readTemperature()) + ";" + String(dht1.readHumidity()) + ";" + Rele1On);
-      myFile.println(rtcTime + "-" + rtcDate + "; DHT2;" + String(dht2.readTemperature()) + ";" + String(dht2.readHumidity()) + ";" + Rele1On);
+      Serial.println("Writing to TEST.txt");
+
+      if(rele==1){
+        temp =   "DHT1;" 
+                  + rtcTime + ";" 
+                  + rtcDate + ";" 
+                  + getStringFromFloat(sTemperature) + ";" 
+                  + getStringFromFloat(sHumidity) + ";"
+                  + "Rele1:" + String(Rele1On);
+      }else{
+        temp =   "DHT2;" 
+                  + rtcTime + ";" 
+                  + rtcDate + ";" 
+                  + getStringFromFloat(sTemperature) + ";" 
+                  + getStringFromFloat(sHumidity) + ";"
+                  + "Rele1:" + String(Rele2On);
+      }
+      //Serial.print(temp);
+      myFile.println(temp);
+      
       myFile.close(); //this writes to the card
       Serial.println("Done");
       Serial.println();
       lineCounter++;
     } else { //else show error
-      Serial.println("Error opeing file.\n");
+      Serial.println("Error opening file.\n");
     }
   }
   else if (!sdInitSuccess) { //if not already initialized
@@ -237,13 +258,13 @@ bool manageRele(int rele, float temp, float lowTemp, float highTemp){
     case 1:
         if(temp < lowTemp && Rele1On == false){
           digitalWrite(RELE1PIN, LOW);
-          Serial.println("Relè 1 ON");
+          Serial.println("Rele 1 ON");
           Rele1On = true;
         }
         else if(temp > highTemp && Rele1On == true)
         {
           digitalWrite(RELE1PIN, HIGH);
-          Serial.println("Relè 1 OFF");
+          Serial.println("Rele 1 OFF");
           Rele1On = false;
         }
         else
@@ -254,13 +275,13 @@ bool manageRele(int rele, float temp, float lowTemp, float highTemp){
     case 2:
         if(temp < lowTemp && Rele2On == false){
           digitalWrite(RELE2PIN, LOW);
-          Serial.println("Relè 2 ON");
+          Serial.println("Rele 2 ON");
           Rele2On = true;
         }
         else if(temp > highTemp && Rele2On == true)
         {
           digitalWrite(RELE2PIN, HIGH);
-          Serial.println("Relè 2 OFF");
+          Serial.println("Rele 2 OFF");
           Rele2On = false;
         }
         else
