@@ -35,7 +35,6 @@ bool monitorDate = true;
 byte inByte;
 bool sdInitSuccess = false; //card init status
 File myFile;
-int lineCounter = 0;
 bool stopRequired = false;
 int memoryWritingPeriod = 10;
 int minuteWriting = -1;
@@ -181,35 +180,35 @@ bool initSD(void){
 
 void saveDataOnFile(int rele, float sTemperature, float sHumidity){
   String temp;
+  String fileName;
   
+  if(rele==1){
+    temp =   "DHT1;" 
+              + rtcTime + ";" 
+              + rtcDate + ";" 
+              + getStringFromFloat(sTemperature) + ";" 
+              + getStringFromFloat(sHumidity) + ";"
+              + "Rele1:" + String(Rele1On);
+    fileName = "DHT1.txt";
+  }else{
+    temp =   "DHT2;" 
+              + rtcTime + ";" 
+              + rtcDate + ";" 
+              + getStringFromFloat(sTemperature) + ";" 
+              + getStringFromFloat(sHumidity) + ";"
+              + "Rele1:" + String(Rele2On);
+    fileName = "DHT2.txt";
+  }
+      
   if (sdInitSuccess) {
-    myFile = SD.open("TEST.txt", FILE_WRITE);
+    myFile = SD.open(fileName, FILE_WRITE);
     if (myFile) {
       Serial.println("File opened successfully.");
       Serial.println("Writing to TEST.txt");
-
-      if(rele==1){
-        temp =   "DHT1;" 
-                  + rtcTime + ";" 
-                  + rtcDate + ";" 
-                  + getStringFromFloat(sTemperature) + ";" 
-                  + getStringFromFloat(sHumidity) + ";"
-                  + "Rele1:" + String(Rele1On);
-      }else{
-        temp =   "DHT2;" 
-                  + rtcTime + ";" 
-                  + rtcDate + ";" 
-                  + getStringFromFloat(sTemperature) + ";" 
-                  + getStringFromFloat(sHumidity) + ";"
-                  + "Rele1:" + String(Rele2On);
-      }
-      //Serial.print(temp);
       myFile.println(temp);
-      
       myFile.close(); //this writes to the card
       Serial.println("Done");
       Serial.println();
-      lineCounter++;
     } else { //else show error
       Serial.println("Error opening file.\n");
     }
