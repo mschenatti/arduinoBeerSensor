@@ -1,9 +1,13 @@
+//#define _DATA_ON_SD_
+
 /*--------------INLCUDES--------------*/
 //Monitor
 #include <LiquidCrystal_I2C.h>
 //Memory
 #include <SPI.h>
-#include <SD.h> //include the SD library
+#ifdef _DATA_ON_SD_
+  #include <SD.h> //include the SD library
+#endif
 //Sensor
 #include <DHT.h>
 //RTC
@@ -32,14 +36,16 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 bool monitorDate = true;
 
 //Memory
-byte inByte;
-bool sdInitSuccess = false; //card init status
-File myFile;
-bool stopRequired = false;
-int memoryWritingPeriod = 10;
-int minuteWriting = -1;
-int minutesNow = 0;
-bool writingRequired = false;
+#ifdef _DATA_ON_SD_
+  byte inByte;
+  bool sdInitSuccess = false; //card init status
+  File myFile;
+  bool stopRequired = false;
+  int memoryWritingPeriod = 10;
+  int minuteWriting = -1;
+  int minutesNow = 0;
+  bool writingRequired = false;
+#endif
 
 //Sensor
 DHT dht1(DHT1PIN, DHTTYPE); //// Initialize DHT sensor for normal 16mhz Arduino
@@ -75,9 +81,11 @@ void setup() {
   lcd.clear();
   
   //Memory
-  pinMode(SS_PIN, OUTPUT);
-  delay(1000);
-  sdInitSuccess = initSD();
+  #ifdef _DATA_ON_SD_
+    pinMode(SS_PIN, OUTPUT);
+    delay(1000);
+    sdInitSuccess = initSD();
+  #endif
 
   //Relè
   pinMode(RELE1PIN, OUTPUT);
@@ -124,10 +132,14 @@ void loop() {
   Serial.print("DHT22 1: ");
   printDebugTempHum();
   //Manage Rele
-  if (manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP) || writingRequired ){
-    saveDataOnFile(1, hum, temp);
-  }
-
+  #ifdef _DATA_ON_SD_
+    if (manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP) || writingRequired ){
+        saveDataOnFile(1, hum, temp);
+    }
+  #else
+    manageRele(1, temp, DEFAULT_RELE1_LOW_TEMP, DEFAULT_RELE1_HIGH_TEMP);
+  #endif
+  
   //Monitor write
   lcd.setCursor(0,0);
   typewriting("T1:" + getStringFromFloat(temp));
@@ -142,11 +154,14 @@ void loop() {
   Serial.print("DHT22 2: ");
   printDebugTempHum();
   //Manage Rele
-  if(manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP) || writingRequired){
-    saveDataOnFile(2, hum, temp);
-  }
-
+  #ifdef _DATA_ON_SD_
+    if(manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP) || writingRequired){
+        saveDataOnFile(2, hum, temp);
+    }
   writingRequired = false;
+  #else
+    manageRele(2, temp, DEFAULT_RELE2_LOW_TEMP, DEFAULT_RELE2_HIGH_TEMP);
+  #endif
   
   //Monitor write
   lcd.setCursor(9,0);
@@ -154,16 +169,18 @@ void loop() {
   lcd.setCursor(9,1);
   typewriting("H2:" + getStringFromFloat(hum));
 
+  #ifdef _DATA_ON_SD_
   minutesNow = rtc.getMinute();
-  if(minuteWriting == -1 || minutesNow == minuteWriting){
+  if(minuteWriting == -1 || minutesNow == minuteWriting){  
     writingRequired = true;
     minuteWriting = (minutesNow + memoryWritingPeriod) % 60;
   }
+  #endif
   delay(5000);
 }
 
 /*--------------FUNCTIONS--------------*/
-
+#ifdef _DATA_ON_SD_
 bool initSD(void){
   Serial.println("Initializing SD Card..");
   if (!SD.begin(10)) { //using pin 10 (SS)
@@ -217,6 +234,7 @@ void saveDataOnFile(int rele, float sTemperature, float sHumidity){
       sdInitSuccess = initSD();
   }
 }
+#endif
 
 void typewriting(String messaggio) {
   int lunghezza = messaggio.length();
